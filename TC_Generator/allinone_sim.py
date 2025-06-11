@@ -1,6 +1,7 @@
 import numpy as np
 from geopy import Point
 from geopy.distance import distance
+from datetime import datetime, timedelta
 import random
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
@@ -171,7 +172,9 @@ if __name__ == "__main__":
     threshold = 22  # 阈值
 
     for i, raw_intensity in enumerate(intensity_array):
-        print(f"点{i} 纬度{lats[i]:.2f} 经度{lons[i]:.2f} 强度{raw_intensity:.2f}")
+        start_time = datetime.strptime("2065081700", "%Y%m%d%H") # 设置起始时间，举例2065081700
+        now_time = start_time + timedelta(hours=6*i)
+        ts = now_time.strftime("%Y%m%d%H")
         rounded_intensity = int(round(raw_intensity / 5) * 5)
         if rounded_intensity < threshold:
             break
@@ -181,6 +184,7 @@ if __name__ == "__main__":
         base = max(rounded_intensity / 7.4, 0.01)
         mslp = 1011 - base ** (1 / 0.648)
         mslp_array.append(int(round(mslp)))
+        print(f"WP, 01, {ts},   , BEST,   0,  {lats[i]:.1f}N, {lons[i]:.1f}E,  {rounded_intensity}, {mslp_array[i]}, TD,")
 
     if len(filtered_lats) == 0:
         print("所有路径点都被屏蔽，请调整起点、路径参数或阈值！")
