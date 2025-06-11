@@ -8,6 +8,7 @@ import cartopy.feature as cfeature
 import xarray as xr
 import requests
 import re
+from matplotlib.collections import LineCollection
 
 # ========== 生成位置种子，用BTC波幅实现伪随机 ==========
 url = "https://stooq.com/q/?s=btcusd"
@@ -38,7 +39,7 @@ def get_point_at_distance(start_lat, start_lon, distance_km, bearing_deg):
     destination = distance(kilometers=distance_km).destination(point=start_point, bearing=bearing_deg)
     return destination.latitude, destination.longitude
 
-def generate_realistic_northbound_path(start_lat, start_lon, num_points=74, point_distance_km=80): #num_points为步数
+def generate_realistic_northbound_path(start_lat, start_lon, num_points=74, point_distance_km=80, westerlies=33): #num_points为步数，westerlies为西风槽纬度
     lats = [start_lat]
     lons = [start_lon]
     luck = random.randint(0, 10) #转向速度
@@ -51,13 +52,27 @@ def generate_realistic_northbound_path(start_lat, start_lon, num_points=74, poin
         tilt = 1
 
     for i in range(1, num_points):
-        north_distance = point_distance_km * (mov + 0.0002 * luck * i**2)
-        east_distance = tilt * point_distance_km * np.cos(i * dir / num_points * np.pi) * 1.4
-        east_distance += np.random.normal(-36, 36) #随机运动
+        prev_lat = lats[-1]
+        # ====== 北向量设计：westerlies附近北向陡增 ======
+        # 低纬慢慢向北，高纬靠近westerlies快速加大
+        if prev_lat < westerlies - 3:
+            north_factor = mov + 0.04 * i  # 初期缓增
+        else:
+            north_factor = mov + 0.04 * i + 0.02 * ((prev_lat - (westerlies-3)) ** 1.6)
+        north_distance = point_distance_km * north_factor
+
+        # ====== 东西向设计：转向期才剧烈（如高纬才有大偏转/波动）======
+        if prev_lat < westerlies - 2:
+            east_noise = np.random.normal(-24, 24)
+        else:
+            east_noise = np.random.normal(-60, 60)  # 副热带更剧烈
+        east_distance = tilt * point_distance_km * np.cos(i * dir / num_points * np.pi) * 1.4 + east_noise
+
         total_distance = np.sqrt(north_distance**2 + east_distance**2)
         bearing = (np.degrees(np.arctan2(east_distance, north_distance)) + 360) % 360
+
         next_lat, next_lon = get_point_at_distance(lats[-1], lons[-1], total_distance, bearing)
-        if next_lat > 41: #变性的纬度
+        if next_lat > westerlies+10: #变性的纬度
             break
         lats.append(next_lat)
         lons.append(next_lon)
@@ -67,10 +82,10 @@ def generate_realistic_northbound_path(start_lat, start_lon, num_points=74, poin
 def calculate_mpi(sst):
     if (sst > 25.30):
         return (0.9 * ((sst + 273 - 195) / 195) * (1.2 - (sst + 273 - 283) * 0.006) * 2.27e6 * 1.67e-3 * (sst - 25.30)) ** 0.5 / 0.51444
-    elif (sst > 15):
-        return 25.30
+    elif (sst > 24.30):
+        return 25
     else:
-        return 22
+        return 0
 
 def intensity_simulation(lats, lons, nc_filename):
     # SST 数据读取
@@ -103,8 +118,8 @@ def intensity_simulation(lats, lons, nc_filename):
         lon_min = lon2 - 0.5
         lon_max = lon2 + 0.5
         sst_region = sst.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
-        # 排除缺测点，取均值
-        sst_point = float(np.nanmean(sst_region.values))
+        # 缺测点视为陆地设为冷水，取均值
+        sst_point = float(np.mean(np.nan_to_num(sst_region.values, nan=24)))
         # ============ END =============
 
         mpi = calculate_mpi(sst_point)
@@ -122,7 +137,7 @@ def intensity_simulation(lats, lons, nc_filename):
                 ERCD = 0
 
         # 强度更新公式
-        current_intensity += ((mpi - vertical_shear * 3 - current_intensity) / 6) * ((min(current_intensity, 70) / 70)**2) - (20 / (sp + 0.2)) - ERCD
+        current_intensity += ((mpi - vertical_shear * 3 - current_intensity) / 6) * ((min(current_intensity, 70) / 70)**1.5) - (20 / (sp + 0.2)) - ERCD
         intensity_array.append(current_intensity)
     return np.array(intensity_array)
 
@@ -198,26 +213,31 @@ def get_color(val):
     else:
         return 'gray'
 
-# 每点颜色
-point_colors = [get_color(val) for val in intensity_rounded]
+# 生成折线的每一段
+points = np.array([filtered_lons, filtered_lats]).T.reshape(-1, 1, 2)
+segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
-fig = plt.figure(figsize=(10, 6))
+# 每段的强度，取前一节点（可用前后均值、后节点等，自定）
+segment_colors = [get_color(val) for val in intensity_rounded[:-1]]
+
+# 创建LineCollection
+lc = LineCollection(segments, colors=segment_colors, linewidths=2.5, zorder=10, alpha=1, transform=ccrs.PlateCarree())
+
+fig = plt.figure(figsize=(10, 6)) #地图
 ax = plt.axes(projection=ccrs.PlateCarree())
-ax.set_extent([min(filtered_lons)-10, max(filtered_lons)+10, min(filtered_lats)-5, max(filtered_lats)+5], crs=ccrs.PlateCarree())
-ax.coastlines()
-ax.add_feature(cfeature.BORDERS, linestyle=':')
-ax.gridlines(draw_labels=True)
+ax.set_extent([min(filtered_lons)-10, max(filtered_lons)+10, min(filtered_lats)-5, max(filtered_lats)+5], crs=ccrs.PlateCarree()) #范围
+ax.coastlines() #海岸线
+ax.add_feature(cfeature.LAND, facecolor='#e5faec', edgecolor='none') #陆地
+ax.add_feature(cfeature.BORDERS, linestyle=':') #国界线
+ax.gridlines(draw_labels=True, color='#666666', linestyle='--', alpha=0.1) #经纬度
 
-# 按顺序plot整条轨迹线（统一色，或可按最高色分段连线，简单起见先统一黑色）
-ax.plot(filtered_lons, filtered_lats, '-k', linewidth=1.2, label='Path')
+ax.add_collection(lc)
 
-# 彩色散点
-for x, y, c in zip(filtered_lons, filtered_lats, point_colors):
-    ax.scatter(x, y, color=c, s=60, marker='o', edgecolor='k', zorder=10)
-
-# 标记起止
-ax.scatter(filtered_lons[0], filtered_lats[0], color='green', label='Start', s=70, zorder=12)
-ax.scatter(filtered_lons[-1], filtered_lats[-1], color='red', label='End', s=70, zorder=12)
+# 每4个点标记一次，颜色对应强度
+for i in range(0, len(filtered_lats), 4):
+    ax.scatter(filtered_lons[i], filtered_lats[i], 
+               color=get_color(intensity_rounded[i]), 
+               s=40, zorder=12, transform=ccrs.PlateCarree())
 
 # 自定义legend
 from matplotlib.patches import Patch
@@ -230,10 +250,31 @@ legend_elements = [
     Patch(facecolor='red', edgecolor='k', label='C3'),
     Patch(facecolor='pink', edgecolor='k', label='C4'),
     Patch(facecolor='purple', edgecolor='k', label='C5'),
-    Patch(facecolor='white', edgecolor='green', label='Start'),
-    Patch(facecolor='white', edgecolor='red', label='End'),
 ]
 ax.legend(handles=legend_elements, loc='best', title="Intensity Range")
 
-plt.title("Simulated Cyclone Path & Intensity (Discrete Colors)")
+# 随机命名表
+names = [
+    "Andromeda", "Antlia", "Apus", "Aquarius", "Aquila", "Ara", "Aries", "Auriga",
+    "Boötes", "Caelum", "Camelopardalis", "Cancer", "Canes Venatici", "Canis Major", "Canis Minor",
+    "Capricornus", "Carina", "Cassiopeia", "Centaurus", "Cepheus", "Cetus", "Chamaeleon",
+    "Circinus", "Columba", "Coma Berenices", "Corona Australis", "Corona Borealis",
+    "Corvus", "Crater", "Crux", "Cygnus", "Delphinus", "Dorado", "Draco", "Equuleus",
+    "Eridanus", "Fornax", "Gemini", "Grus", "Hercules", "Horologium", "Hydra", "Hydrus",
+    "Indus", "Lacerta", "Leo", "Leo Minor", "Lepus", "Libra", "Lupus", "Lynx", "Lyra",
+    "Mensa", "Microscopium", "Monoceros", "Musca", "Norma", "Octans", "Ophiuchus",
+    "Orion", "Pavo", "Pegasus", "Perseus", "Phoenix", "Pictor", "Pisces", "Piscis Austrinus",
+    "Puppis", "Pyxis", "Reticulum", "Sagitta", "Sagittarius", "Scorpius", "Sculptor",
+    "Scutum", "Serpens", "Sextans", "Taurus", "Telescopium", "Triangulum", "Triangulum Australe",
+    "Tucana", "Ursa Major", "Ursa Minor", "Vela", "Virgo", "Volans", "Vulpecula"
+]
+name = random.choice(names)
+
+# 计算ACE
+ACE = 0.0
+for w in intensity_rounded:
+    if w >= 34:  # 34节（TS标准），或你可选35节
+        ACE += (w ** 2) / 10000
+
+plt.title(f"Simulated Cyclone Path & Intensity ({name}) ACE: {ACE:.4f}")
 plt.show()
