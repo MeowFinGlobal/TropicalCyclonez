@@ -112,6 +112,7 @@ def intensity_simulation(lats, lons, nc_filename):
         # 西风带处理
         if (lat2 > westerlies - 1):
             vertical_shear += max(0, 0.1*(lat2 - (westerlies-1)))
+        # 眼壁置换过程
         if (current_intensity > 120):
             ERC = random.randint(0, 100)
             if (ERC > 85):
