@@ -1,0 +1,14 @@
+WPAC 2065032009 01W ANALYSIS #{basin} {yyyymmddhh} {serial} ANALYSIS
+---- ---- ---- ---- ---- ----
+QUALITY 01 #image resolution, 01 is high, 02 is low
+CHECK 01 #results being checked or not, 00 is no, 01 is yes
+TIME 2065032010 #image time
+RING -80.76 #minimum ring temperature, celcius
+EYE 10.12 #maximum ring temperature, celcius
+CIR 0.58 #circularity of the eye
+T 6.8 #T-number generated
+CI 130 #current intensity
+CON 01 #confidence, 00 is low, 01 is med, 02 is high
+---- ---- ---- ---- ---- ----
+WPAC 2065032009 01W ANALYSIS
+ENC #credits
