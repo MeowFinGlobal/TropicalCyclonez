@@ -89,7 +89,7 @@ class SSIMLoss(nn.Module):
         ssim_map = ((2*mu1_mu2+C1)*(2*sigma12+C2))/((mu1_sq+mu2_sq+C1)*(sigma1_sq+sigma2_sq+C2))
         return 1 - ssim_map.mean()
 
-dataset = FusionDataset("test", "2", fusion_dir=None, transform=transform)
+dataset = FusionDataset("test", "materials", fusion_dir=None, transform=transform)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 model = UNet().to(device)
 criterion, ssim_loss = CharbonnierLoss(), SSIMLoss().to(device)
