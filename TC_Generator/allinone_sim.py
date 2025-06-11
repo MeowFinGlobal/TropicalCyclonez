@@ -128,11 +128,19 @@ def intensity_simulation(lats, lons, nc_filename):
 
 # ========== 主流程 ==========
 if __name__ == "__main__":
-    # 路径生成（可更改起点）
-    if(sta>0):
-        lats, lons = generate_realistic_northbound_path(sta, 139.0)
+    use_manual = input("是否手动输入lats/lons？(y/n): ").strip().lower() == "y"
+    if use_manual:
+        # 输入格式：以逗号分隔
+        lats_str = input("请输入纬度数组（如13.0,13.5,14.0,...）: ")
+        lons_str = input("请输入经度数组（如129.0,129.3,129.6,...）: ")
+        # 处理输入
+        lats = np.array([float(x) for x in lats_str.split(",")])
+        lons = np.array([float(x) for x in lons_str.split(",")])
     else:
-        lats, lons = generate_realistic_northbound_path(13.0, 129.0)
+        if sta > 0:
+            lats, lons = generate_realistic_northbound_path(sta, 139.0)
+        else:
+            lats, lons = generate_realistic_northbound_path(13.0, 129.0)
     print("[INFO] 路径生成完毕，点数：", len(lats))
 
     # 强度模拟，读取海温文件
