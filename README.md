@@ -1,7 +1,7 @@
 # Meteorology
 
-Personal inventories-
+Personal inventories for storage-
 
-License @Enceladus or @喵大财经MeowFin when taking the materials-
+License @Enceladus or @喵财经MeowFin when taking the materials-
 
 Ask GPT when running into errors!-
