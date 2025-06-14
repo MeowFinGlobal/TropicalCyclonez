@@ -1,3 +1,5 @@
+Output Example:
+
 Name: 01W
 Date: 250614 0600
 Location: 21.2N 109.8E
