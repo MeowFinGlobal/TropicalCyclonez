@@ -1,5 +1,5 @@
-T8 = min(max(0, (intensity - 34) / (dist_km / 5) * R), 1) #T8 probability model, R = 0.5 if east, R = 1.0 if west
-T10 = min(max(0, (intensity - 64) / (dist_km / 5) * R), 1) #T10 probability model, R = 0.5 if east, R = 1.0 if west
+T8 = min(max(0, 4*(intensity - 34)**0.5 / (dist_km / 5) * R), 1) #T8 probability model, R = 0.5 if east, R = 1.0 if west
+T10 = min(max(0, 6*(intensity - 64)**0.5 / (dist_km / 5) * R), 1) #T10 probability model, R = 0.5 if east, R = 1.0 if west
 
 T8 Price = T8 * face_value
 T10 Price = 10 * face_value
