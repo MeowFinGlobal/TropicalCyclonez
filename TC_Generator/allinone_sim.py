@@ -25,7 +25,7 @@ if title_match:
         pct_str = pct_match.group(1).replace(',', '')  # 防止小数点为逗号
         try:
             pct_val = float(pct_str)
-            sta = abs(pct_val ** 0.5 * 10) #将sta改为=0停用随机生成器
+            sta = abs(pct_val ** 0.5 * 0) #将sta改为=0停用随机生成器
             print(f"sta = {sta}")
         except Exception as e:
             print(f"转换为数字出错: {e}")
@@ -40,12 +40,13 @@ def get_point_at_distance(start_lat, start_lon, distance_km, bearing_deg):
     destination = distance(kilometers=distance_km).destination(point=start_point, bearing=bearing_deg)
     return destination.latitude, destination.longitude
 
-def generate_realistic_northbound_path(start_lat, start_lon, num_points=74, point_distance_km=80, westerlies=33): #num_points为步数，westerlies为西风槽纬度
+def generate_realistic_northbound_path(start_lat, start_lon, num_points=74, point_distance_km=80, westerlies=30): #num_points为步数，westerlies为西风槽纬度
     lats = [start_lat]
     lons = [start_lon]
     luck = random.randint(0, 10) #转向速度
     dir = 0.1 * random.randint(0, 30) #方向参数，上限越高越容易产生奇特路径
-    mov = 0.1 * random.randint(-3, 6) #初始北向量
+    mov = 0.1 * random.randint(-3, 0) #初始北向量
+    c = 0.1 * random.randint(0, 0) #初始西向量
     tilt = random.randint(0, 0) #东行或西行，0默认西行
     if (tilt==0):
         tilt = -1
@@ -67,7 +68,7 @@ def generate_realistic_northbound_path(start_lat, start_lon, num_points=74, poin
             east_noise = np.random.normal(-24, 24)
         else:
             east_noise = np.random.normal(-60, 60)  # 副热带更剧烈
-        east_distance = tilt * point_distance_km * np.cos(i * dir / num_points * np.pi) * 1.4 + east_noise
+        east_distance = tilt * point_distance_km * np.cos(i * dir / num_points * np.pi + c * np.pi) * 1.4 + east_noise
 
         total_distance = np.sqrt(north_distance**2 + east_distance**2)
         bearing = (np.degrees(np.arctan2(east_distance, north_distance)) + 360) % 360
@@ -97,8 +98,8 @@ def intensity_simulation(lats, lons, nc_filename):
     current_intensity = 22
     convergence = 20
     divergence = 30
-    vertical_shear = 10
-    westerlies = 33.0
+    vertical_shear = 5
+    westerlies = 12
     ERCD = 0
 
     intensity_array = []
@@ -114,20 +115,20 @@ def intensity_simulation(lats, lons, nc_filename):
         sp = (dx**2 + dy**2)**0.5
 
         # ============ 取1度x1度均值 =============
-        lat_min = lat2 - 0.5
-        lat_max = lat2 + 0.5
-        lon_min = lon2 - 0.5
-        lon_max = lon2 + 0.5
+        lat_min = lat2 - 0.25
+        lat_max = lat2 + 0.25
+        lon_min = lon2 - 0.25
+        lon_max = lon2 + 0.25
         sst_region = sst.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
         # 缺测点视为陆地设为冷水，取均值
-        sst_point = float(np.mean(np.nan_to_num(sst_region.values, nan=24)))
+        sst_point = float(np.mean(np.nan_to_num(sst_region.values, nan=18)))
         # ============ END =============
 
         mpi = calculate_mpi(sst_point)
 
         # 西风带处理
         if (lat2 > westerlies - 1):
-            vertical_shear += max(0, 0.1*(lat2 - (westerlies-1)))
+            vertical_shear += max(0.2*(lat2 - (westerlies-1)), 0.4*(lat2 - (westerlies-1)))
         # 眼壁置换过程
         if (current_intensity > 120):
             ERC = random.randint(0, 100)
@@ -136,7 +137,6 @@ def intensity_simulation(lats, lons, nc_filename):
                     ERCD = random.randint(int(0.03*current_intensity), int(0.06*current_intensity))
             else:
                 ERCD = 0
-
         # 强度更新公式
         current_intensity += ((mpi - vertical_shear * 3 - current_intensity) / 6) * ((min(current_intensity, 70) / 70)**1.5) - (20 / (sp + 0.2)) - ERCD
         intensity_array.append(current_intensity)
@@ -156,11 +156,11 @@ if __name__ == "__main__":
         if sta > 0:
             lats, lons = generate_realistic_northbound_path(sta, 139.0)
         else:
-            lats, lons = generate_realistic_northbound_path(13.0, 129.0)
+            lats, lons = generate_realistic_northbound_path(0.1*random.randint(45,96), random.randint(108,146))
     print("[INFO] 路径生成完毕，点数：", len(lats))
 
     # 强度模拟，读取海温文件
-    nc_filename = "20090817120000-REMSS-L4_GHRSST-SSTfnd-MW_IR_OI-GLOB-v02.0-fv05.1.nc" # REMSS的SST文件，模拟真实下垫面
+    nc_filename = "20191222120000-REMSS-L4_GHRSST-SSTfnd-MW_IR_OI-GLOB-v02.0-fv05.1.nc" # REMSS的SST文件，模拟真实下垫面
     intensity_array = intensity_simulation(lats, lons, nc_filename)
 
     # 四舍五入到最接近的5倍，筛掉低于阈值后的所有点
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     threshold = 22  # 阈值
 
     for i, raw_intensity in enumerate(intensity_array):
-        start_time = datetime.strptime("2065081700", "%Y%m%d%H") # 设置起始时间，举例2065081700
+        start_time = datetime.strptime("2065061200", "%Y%m%d%H") # 设置起始时间，举例2065081700
         now_time = start_time + timedelta(hours=6*i)
         ts = now_time.strftime("%Y%m%d%H")
         rounded_intensity = int(round(raw_intensity / 5) * 5)
